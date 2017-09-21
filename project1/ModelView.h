@@ -3,6 +3,7 @@
 #ifndef MODELVIEW_H
 #define MODELVIEW_H
 
+// #include "ShaderIF.h"
 #include "ShaderIF.h"
 
 #include <string>
@@ -13,14 +14,14 @@
 #include <GL/gl.h>
 #endif
 
-typedef float vec2[2];
-typedef float vec3[3];
+typedef float vec2[2]; // defines vec2 for coordinates
+typedef float vec4[4]; // defines vec4 for colors used in fragment shader
 
 class ModelView
 {
 public:
-	ModelView(ShaderIF* sIF, vec2* coords, vec3* colors,
-		float* temperatures, int nVertices);
+	// shader, coordinates of curve, number of points to calculate, color 
+	ModelView(ShaderIF* sIF, vec2* curveCoordinates, int numPoints, int colorMode);
 	virtual ~ModelView();
 
 	// xyzLimits: {mcXmin, mcXmax, mcYmin, mcYmax, mcZmin, mcZmax}
@@ -34,13 +35,20 @@ public:
 	static void setMCRegionOfInterest(double xyz[6]);
 
 private:
+	GLuint vao[1]; // vao for curve
+	GLuint vbo[1]; // vbo for coordinates
+
+	int color; // distinct color per curve
+	int nPoints; // number of points to calculate
+	double xmi, xma, ymi, yma; // bounds of curve, odd names so they will not conflict with matchAspectRatio
+	static vec4 colors[6]; // color array, error if not static
+
 	ShaderIF* shaderIF;
-	GLuint vao[1];
-	GLuint vbo[3]; // 0: colors; 1: fractions; 2: coordinates
-	int colorMode; // how is color determined for this set of triangles
-	int numVertices;
-	int serialNumber;
-	float xmin, xmax, ymin, ymax;
+
+	void deleteObject(); // destructor helper
+	void initModelGeometry(vec2* curveCoordinates); // constructor helper
+
+
 
 	// Routines for computing parameters necessary to map from arbitrary
 	// model coordinate ranges into OpenGL's -1..+1 Logical Device Space.
@@ -63,10 +71,6 @@ private:
 
 	static double mcRegionOfInterest[6];
 	static bool aspectRatioPreservationEnabled;
-
-	static int numInstances; // we associate a "serial number" with each instance
-
-	void initModelGeometry(vec2* coords, vec3* colors, float* temperatures);
 };
 
 #endif

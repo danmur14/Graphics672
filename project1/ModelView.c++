@@ -8,24 +8,34 @@
 
 double ModelView::mcRegionOfInterest[6] = { -1.0, 1.0, -1.0, 1.0, -1.0, 1.0 };
 bool ModelView::aspectRatioPreservationEnabled = true;
+vec4 ModelView::colors[6] = {
+	{1.0, 0.0, 0.0, 1.0},
+	{0.0, 1.0, 0.0, 1.0},
+	{0.0, 0.0, 1.0, 1.0},
+	{1.0, 0.0, 1.0, 1.0},
+	{1.0, 1.0, 0.0, 1.0},
+	{0.0, 1.0, 1.0, 1.0}
+}; // list of possible colors
 
-// NOTE: You will likely want to modify the ModelView constructor to
-//       take additional parameters.
-ModelView::ModelView(ShaderIF* sIF) : shaderIF(sIF)
+ModelView::ModelView(ShaderIF* sIF, vec2* curveCoordinates, int numPoints, int colorMode) : shaderIF(sIF)
 {
-	// TODO: define and call method(s) to initialize your model and send data to GPU
+	nPoints = numPoints;
+	color = colorMode;
+	initModelGeometry(curveCoordinates);
 }
 
 ModelView::~ModelView()
 {
-	// TODO: delete the vertex array objects and buffers here
+	if (vao[0] > 0) // hasn't already been deleted
+	{
+		glDeleteBuffers(1, vbo);
+		glDeleteVertexArrays(1, vao);
+		vao[0] = vbo[0] = 0;
+	}
 }
 
 void ModelView::compute2DScaleTrans(float* scaleTransF) // CLASS METHOD
 {
-	// TODO: This code can be used as is, BUT be absolutely certain you
-	//       understand everything about how it works.
-
 	double xmin = mcRegionOfInterest[0];
 	double xmax = mcRegionOfInterest[1];
 	double ymin = mcRegionOfInterest[2];
@@ -52,9 +62,10 @@ void ModelView::compute2DScaleTrans(float* scaleTransF) // CLASS METHOD
 // xyzLimits: {mcXmin, mcXmax, mcYmin, mcYmax, mcZmin, mcZmax}
 void ModelView::getMCBoundingBox(double* xyzLimits) const
 {
-	// TODO:
-	// Put this ModelView instance's min and max x, y, and z extents
-	// into xyzLimits[0..5]. (-1 .. +1 is OK for z direction for 2D models)
+	//  (-1 .. +1 is OK for z direction for 2D models)
+	xyzLimits[0] = xmi; xyzLimits[1] = xma;
+	xyzLimits[2] = ymi; xyzLimits[3] = yma;
+	xyzLimits[4] = -1.0; xyzLimits[5] =  1.0;
 }
 
 bool ModelView::handleCommand(unsigned char anASCIIChar, double ldsX, double ldsY)
@@ -75,8 +86,6 @@ void ModelView::linearMap(double fromMin, double fromMax, double toMin, double t
 void ModelView::matchAspectRatio(double& xmin, double& xmax,
         double& ymin, double& ymax, double vAR)
 {
-	// TODO: This code can be used as is, BUT be absolutely certain you
-	//       understand everything about how it works.
 
 	double wHeight = ymax - ymin;
 	double wWidth = xmax - xmin;
@@ -105,12 +114,22 @@ void ModelView::render() const
 	GLint pgm;
 	glGetIntegerv(GL_CURRENT_PROGRAM, &pgm);
 
-	// draw the triangles using our vertex and fragment shaders
+	// use shader
 	glUseProgram(shaderIF->getShaderPgmID());
 
-	// TODO: set scaleTrans (and all other needed) uniform(s)
+	// calculate scaleTrans
+	float scaleTrans[4];
+	compute2DScaleTrans(scaleTrans);
+	glUniform4fv(shaderIF->ppuLoc("scaleTrans"), 1, scaleTrans);
 
-	// TODO: make require primitive call(s)
+	// pass color to fragment shader, must be used to change program
+	glUniform4fv(shaderIF->ppuLoc("colorMode"), 1, colors[color]);
+
+	// bind curve VAO
+	glBindVertexArray(vao[0]);
+
+	// draw curve
+	glDrawArrays(GL_LINE_STRIP, 0, nPoints);
 
 	// restore the previous program
 	glUseProgram(pgm);
@@ -120,4 +139,36 @@ void ModelView::setMCRegionOfInterest(double xyz[6])
 {
 	for (int i=0 ; i<6 ; i++)
 		mcRegionOfInterest[i] = xyz[i];
+}
+
+void ModelView::initModelGeometry(vec2* curveCoordinates)
+{
+	// Create the VAO and VBO
+	glGenVertexArrays(1, vao);
+	glGenBuffers(1, vbo);
+
+	// Initialize them
+	glBindVertexArray(vao[0]);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+
+	// Determine and remember the min/max coordinates
+	xmi = xma = curveCoordinates[0][0];
+	ymi = yma = curveCoordinates[0][1];
+	for (int i = 1; i < nPoints; i++)
+	{
+		if (curveCoordinates[i][0] < xmi)
+			xmi = curveCoordinates[i][0];
+		else if (curveCoordinates[i][0] > xma)
+			xma = curveCoordinates[i][0];
+		if (curveCoordinates[i][1] < ymi)
+			ymi = curveCoordinates[i][1];
+		else if (curveCoordinates[i][1] > yma)
+			yma = curveCoordinates[i][1];
+	}
+
+	// Allocate space for AND send data to GPU
+	int numBytesInBuffer = nPoints * sizeof(vec2);
+	glBufferData(GL_ARRAY_BUFFER, numBytesInBuffer, curveCoordinates, GL_STATIC_DRAW);
+	glVertexAttribPointer(shaderIF->pvaLoc("mcPosition"), 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(shaderIF->pvaLoc("mcPosition"));
 }
